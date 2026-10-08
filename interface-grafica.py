@@ -3,7 +3,8 @@ from tkinter import filedialog, messagebox
 import threading
 import os
 
-from extrator_pncp import buscar_editais_pncp, salvar_em_csv
+# Importação atualizada para utilizar o salvar_em_excel
+from extrator_pncp import buscar_editais_pncp, salvar_em_excel
 
 # --- CONFIGURAÇÃO DA PALETA DE CORES BLOKO ---
 COR_PRIMARIA = "#3751A3"
@@ -20,11 +21,10 @@ class AppMonitoramento(ctk.CTk):
         super().__init__()
 
         self.title("Bloko - Monitoramento de Editais")
-        self.geometry("700x650")  # Tamanho fixo e confortável
+        self.geometry("700x650")
         self.resizable(False, False)
         self.configure(fg_color=COR_FUNDO)
 
-        # --- 1. HEADER (Fixo no topo) ---
         self.frame_header = ctk.CTkFrame(self, fg_color=COR_PRIMARIA, corner_radius=0, height=80)
         self.frame_header.pack(fill="x", side="top")
         self.frame_header.pack_propagate(False)
@@ -37,7 +37,6 @@ class AppMonitoramento(ctk.CTk):
         )
         self.lbl_titulo.pack(pady=22)
 
-        # --- 2. FOOTER (Fixo na base da janela) ---
         self.frame_footer = ctk.CTkFrame(self, fg_color=COR_FUNDO)
         self.frame_footer.pack(fill="x", side="bottom", padx=35, pady=(10, 15))
 
@@ -62,7 +61,6 @@ class AppMonitoramento(ctk.CTk):
         )
         self.lbl_status.pack(pady=0)
 
-        # --- 3. CORPO COM ROLAGEM ---
         self.container = ctk.CTkScrollableFrame(
             self,
             fg_color=COR_FUNDO,
@@ -71,7 +69,6 @@ class AppMonitoramento(ctk.CTk):
         )
         self.container.pack(fill="both", expand=True, padx=35, pady=(20, 0))
 
-        # Filtros Base
         self.lbl_secao1 = ctk.CTkLabel(self.container, text="Filtros Base (Catálogo)",
                                        font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_PRIMARIA)
         self.lbl_secao1.pack(anchor="w", pady=(0, 5))
@@ -112,7 +109,6 @@ class AppMonitoramento(ctk.CTk):
             chk.grid(row=linha, column=coluna, padx=20, pady=10, sticky="w")
             self.check_vars[termo] = var
 
-        # Termos Adicionais
         self.lbl_secao2 = ctk.CTkLabel(self.container, text="Termos Adicionais",
                                        font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_PRIMARIA)
         self.lbl_secao2.pack(anchor="w", pady=(0, 5))
@@ -129,7 +125,6 @@ class AppMonitoramento(ctk.CTk):
         )
         self.entry_custom.pack(fill="x", pady=(0, 20))
 
-        # Configurações de Extração
         self.lbl_secao_download = ctk.CTkLabel(self.container, text="Configurações de Extração",
                                                font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_PRIMARIA)
         self.lbl_secao_download.pack(anchor="w", pady=(0, 5))
@@ -146,7 +141,6 @@ class AppMonitoramento(ctk.CTk):
         self.switch_baixar.select()
         self.switch_baixar.pack(anchor="w", pady=(0, 20))
 
-        # Local de Armazenamento
         self.lbl_secao3 = ctk.CTkLabel(self.container, text="Local de Armazenamento",
                                        font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_PRIMARIA)
         self.lbl_secao3.pack(anchor="w", pady=(0, 5))
@@ -228,8 +222,8 @@ class AppMonitoramento(ctk.CTk):
         try:
             df_resultados = buscar_editais_pncp(palavras_chave, pasta_raiz, app_gui=self, baixar_arquivos=baixar_anexos)
 
-            self.atualizar_status("Salvando CSV e finalizando...")
-            total_salvos = salvar_em_csv(df_resultados, pasta_raiz)
+            self.atualizar_status("Gerando planilha Excel e finalizando...")
+            total_salvos = salvar_em_excel(df_resultados, pasta_raiz)
 
             self.atualizar_status(f"Concluído! {total_salvos} editais capturados.")
             messagebox.showinfo("Sucesso",
