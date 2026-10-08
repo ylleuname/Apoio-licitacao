@@ -68,7 +68,7 @@ def baixar_arquivos_pncp(cnpj: str, ano: str, seq: str, orgao: str, scraper, pas
         pass
 
 
-def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None) -> pd.DataFrame:
+def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None, baixar_arquivos=True) -> pd.DataFrame:
     base_url = "https://pncp.gov.br/api/search"
     resultados_totais = []
     hoje = datetime.now()
@@ -79,97 +79,114 @@ def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None) -> 
     status_abertos = ['recebendo_proposta']
 
     for keyword in palavras_chave:
-        if app_gui:
-            app_gui.atualizar_status(f"Buscando: '{keyword}'...")
-
         for status_slug in status_abertos:
-            params = {
-                'q': keyword,
-                'tipos_documento': 'edital',
-                'status': status_slug,
-                'ordenacao': '-data',
-                'pagina': 1,
-                'tam_pagina': 50
-            }
+            pagina_atual = 1
 
-            max_tentativas = 3
-            for tentativa in range(1, max_tentativas + 1):
-                try:
-                    response = scraper.get(base_url, params=params, timeout=60)
-                    response.raise_for_status()
-                    dados = response.json().get('items', [])
+            # Loop infinito que só é quebrado quando o PNCP avisa que as páginas acabaram
+            while True:
+                if app_gui:
+                    texto_status = f"Buscando: '{keyword}' (Página {pagina_atual})..." if pagina_atual > 1 else f"Buscando: '{keyword}'..."
+                    app_gui.atualizar_status(texto_status)
 
-                    for licitacao in dados:
-                        id_licitacao = licitacao.get('numero_controle_pncp', 'N/A')
-                        cnpj = licitacao.get('orgao_cnpj')
-                        ano = licitacao.get('ano')
-                        seq = licitacao.get('numero_sequencial')
+                params = {
+                    'q': keyword,
+                    'tipos_documento': 'edital',
+                    'status': status_slug,
+                    'ordenacao': '-data',
+                    'pagina': pagina_atual,
+                    'tam_pagina': 50
+                }
 
-                        data_fim_str = licitacao.get('data_fim_recebimento_propostas')
+                max_tentativas = 3
+                sucesso_requisicao = False
+                dados = []
 
-                        if (not data_fim_str or str(data_fim_str).strip() == "") and cnpj and ano and seq:
-                            detalhe_url = f"https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{seq}"
-                            try:
-                                res_detalhe = scraper.get(detalhe_url, headers=headers_detalhe, timeout=15)
-                                if res_detalhe.status_code == 200:
-                                    json_detalhe = res_detalhe.json()
-                                    data_fim_str = (
-                                            json_detalhe.get('dataHoraFimRecebimentoPropostas') or
-                                            json_detalhe.get('dataFimRecebimentoPropostas') or
-                                            json_detalhe.get('dataHoraAberturaProposta') or
-                                            json_detalhe.get('dataAberturaProposta')
-                                    )
-                            except:
-                                pass
+                for tentativa in range(1, max_tentativas + 1):
+                    try:
+                        response = scraper.get(base_url, params=params, timeout=60)
+                        response.raise_for_status()
+                        dados = response.json().get('items', [])
+                        sucesso_requisicao = True
+                        break  # Conseguiu baixar o JSON, sai do loop de tentativas
+                    except:
+                        if tentativa < max_tentativas:
+                            time.sleep(5)
 
-                        is_valid = True
+                # Se a requisição falhou nas 3 tentativas ou se a página veio vazia (acabaram os editais)
+                if not sucesso_requisicao or not dados:
+                    break  # Sai do loop de paginação e vai para a próxima palavra-chave
 
-                        # O filtro matemático continua existindo em background para segurança,
-                        # mas não exportamos mais o dado incerto para o CSV.
-                        if data_fim_str and str(data_fim_str).strip() != "":
-                            try:
-                                data_fim_dt = pd.to_datetime(data_fim_str).tz_localize(None)
-                                if data_fim_dt < hoje:
-                                    is_valid = False
-                            except:
-                                pass
+                # Processa os 50 editais desta página
+                for licitacao in dados:
+                    id_licitacao = licitacao.get('numero_controle_pncp', 'N/A')
+                    cnpj = licitacao.get('orgao_cnpj')
+                    ano = licitacao.get('ano')
+                    seq = licitacao.get('numero_sequencial')
 
-                        if not is_valid:
-                            continue
+                    data_fim_str = licitacao.get('data_fim_recebimento_propostas')
 
-                        orgao = licitacao.get('orgao_nome', 'Não Informado')
+                    if (not data_fim_str or str(data_fim_str).strip() == "") and cnpj and ano and seq:
+                        detalhe_url = f"https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{seq}"
+                        try:
+                            res_detalhe = scraper.get(detalhe_url, headers=headers_detalhe, timeout=15)
+                            if res_detalhe.status_code == 200:
+                                json_detalhe = res_detalhe.json()
+                                data_fim_str = (
+                                        json_detalhe.get('dataHoraFimRecebimentoPropostas') or
+                                        json_detalhe.get('dataFimRecebimentoPropostas') or
+                                        json_detalhe.get('dataHoraAberturaProposta') or
+                                        json_detalhe.get('dataAberturaProposta')
+                                )
+                        except:
+                            pass
 
-                        if cnpj and ano and seq:
-                            baixar_arquivos_pncp(str(cnpj), str(ano), str(seq), orgao, scraper, pasta_raiz)
+                    is_valid = True
 
-                        objeto_texto = str(
-                            licitacao.get('description') or licitacao.get('title') or licitacao.get(
-                                'informacao_complementar') or ""
-                        ).strip()
+                    if data_fim_str and str(data_fim_str).strip() != "":
+                        try:
+                            data_fim_dt = pd.to_datetime(data_fim_str).tz_localize(None)
+                            if data_fim_dt < hoje:
+                                is_valid = False
+                        except:
+                            pass
 
-                        data_pub_str = licitacao.get('data_publicacao_pncp')
-                        data_pub_formatada = pd.to_datetime(data_pub_str.split('T')[0]).strftime(
-                            '%d/%m/%Y') if data_pub_str else 'N/A'
+                    if not is_valid:
+                        continue
 
-                        link_acesso = f"https://pncp.gov.br/app/editais/{cnpj}/{ano}/{seq}" if (
-                                    cnpj and ano and seq) else licitacao.get('itemUrl', 'Link indisponível')
+                    orgao = licitacao.get('orgao_nome', 'Não Informado')
 
-                        # Colunas problemáticas removidas do output final
-                        resultados_totais.append({
-                            'id_licitacao': id_licitacao,
-                            'orgao_nome': orgao,
-                            'objeto': objeto_texto,
-                            'data_publicacao': data_pub_formatada,
-                            'link_acesso': link_acesso
-                        })
-                    break
-                except:
-                    if tentativa < max_tentativas:
-                        time.sleep(5)
+                    if baixar_arquivos and cnpj and ano and seq:
+                        baixar_arquivos_pncp(str(cnpj), str(ano), str(seq), orgao, scraper, pasta_raiz)
 
+                    objeto_texto = str(
+                        licitacao.get('description') or licitacao.get('title') or licitacao.get(
+                            'informacao_complementar') or ""
+                    ).strip()
+
+                    data_pub_str = licitacao.get('data_publicacao_pncp')
+                    data_pub_formatada = pd.to_datetime(data_pub_str.split('T')[0]).strftime(
+                        '%d/%m/%Y') if data_pub_str else 'N/A'
+
+                    link_acesso = f"https://pncp.gov.br/app/editais/{cnpj}/{ano}/{seq}" if (
+                                cnpj and ano and seq) else licitacao.get('itemUrl', 'Link indisponível')
+
+                    resultados_totais.append({
+                        'id_licitacao': id_licitacao,
+                        'orgao_nome': orgao,
+                        'objeto': objeto_texto,
+                        'data_publicacao': data_pub_formatada,
+                        'link_acesso': link_acesso
+                    })
+
+                # Vira a página para buscar o próximo lote da mesma palavra
+                pagina_atual += 1
+
+    # Após varrer todas as páginas de todas as palavras, gera o DataFrame final
     df = pd.DataFrame(resultados_totais)
     if not df.empty:
+        # A remoção de duplicatas garante que palavras cruzadas não sujem o CSV
         df = df.drop_duplicates(subset=['id_licitacao'])
+
     return df
 
 

@@ -20,11 +20,11 @@ class AppMonitoramento(ctk.CTk):
         super().__init__()
 
         self.title("Bloko - Monitoramento de Editais")
-        # Altura aumentada de 680 para 720 para acomodar o rodapé
-        self.geometry("700x720")
+        self.geometry("700x650")  # Tamanho fixo e confortável
         self.resizable(False, False)
         self.configure(fg_color=COR_FUNDO)
 
+        # --- 1. HEADER (Fixo no topo) ---
         self.frame_header = ctk.CTkFrame(self, fg_color=COR_PRIMARIA, corner_radius=0, height=80)
         self.frame_header.pack(fill="x", side="top")
         self.frame_header.pack_propagate(False)
@@ -37,9 +37,41 @@ class AppMonitoramento(ctk.CTk):
         )
         self.lbl_titulo.pack(pady=22)
 
-        self.container = ctk.CTkFrame(self, fg_color=COR_FUNDO)
-        self.container.pack(fill="both", expand=True, padx=35, pady=20)
+        # --- 2. FOOTER (Fixo na base da janela) ---
+        self.frame_footer = ctk.CTkFrame(self, fg_color=COR_FUNDO)
+        self.frame_footer.pack(fill="x", side="bottom", padx=35, pady=(10, 15))
 
+        self.btn_iniciar = ctk.CTkButton(
+            self.frame_footer,
+            text="INICIAR MONITORAMENTO",
+            command=self.iniciar_busca,
+            fg_color=COR_SECUNDARIA,
+            hover_color="#8c752d",
+            text_color="#FFFFFF",
+            height=50,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            corner_radius=8
+        )
+        self.btn_iniciar.pack(fill="x", pady=(0, 5))
+
+        self.lbl_status = ctk.CTkLabel(
+            self.frame_footer,
+            text="Pronto para iniciar.",
+            text_color="#777777",
+            font=ctk.CTkFont(size=12)
+        )
+        self.lbl_status.pack(pady=0)
+
+        # --- 3. CORPO COM ROLAGEM ---
+        self.container = ctk.CTkScrollableFrame(
+            self,
+            fg_color=COR_FUNDO,
+            scrollbar_button_color=COR_CLARA,
+            scrollbar_button_hover_color=COR_PRIMARIA
+        )
+        self.container.pack(fill="both", expand=True, padx=35, pady=(20, 0))
+
+        # Filtros Base
         self.lbl_secao1 = ctk.CTkLabel(self.container, text="Filtros Base (Catálogo)",
                                        font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_PRIMARIA)
         self.lbl_secao1.pack(anchor="w", pady=(0, 5))
@@ -80,6 +112,7 @@ class AppMonitoramento(ctk.CTk):
             chk.grid(row=linha, column=coluna, padx=20, pady=10, sticky="w")
             self.check_vars[termo] = var
 
+        # Termos Adicionais
         self.lbl_secao2 = ctk.CTkLabel(self.container, text="Termos Adicionais",
                                        font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_PRIMARIA)
         self.lbl_secao2.pack(anchor="w", pady=(0, 5))
@@ -96,12 +129,30 @@ class AppMonitoramento(ctk.CTk):
         )
         self.entry_custom.pack(fill="x", pady=(0, 20))
 
+        # Configurações de Extração
+        self.lbl_secao_download = ctk.CTkLabel(self.container, text="Configurações de Extração",
+                                               font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_PRIMARIA)
+        self.lbl_secao_download.pack(anchor="w", pady=(0, 5))
+
+        self.switch_baixar = ctk.CTkSwitch(
+            self.container,
+            text="Baixar anexos e editais em PDF",
+            font=ctk.CTkFont(size=13),
+            text_color="#333333",
+            progress_color=COR_PRIMARIA,
+            button_color=COR_SECUNDARIA,
+            button_hover_color="#8c752d"
+        )
+        self.switch_baixar.select()
+        self.switch_baixar.pack(anchor="w", pady=(0, 20))
+
+        # Local de Armazenamento
         self.lbl_secao3 = ctk.CTkLabel(self.container, text="Local de Armazenamento",
                                        font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_PRIMARIA)
         self.lbl_secao3.pack(anchor="w", pady=(0, 5))
 
         self.frame_dir = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.frame_dir.pack(fill="x", pady=(0, 30))
+        self.frame_dir.pack(fill="x", pady=(0, 10))
 
         self.caminho_salvamento = os.path.join(os.path.expanduser("~"), "Desktop", "Editais_PNCP")
 
@@ -132,27 +183,6 @@ class AppMonitoramento(ctk.CTk):
             corner_radius=6
         )
         self.btn_dir.pack(side="right")
-
-        self.btn_iniciar = ctk.CTkButton(
-            self.container,
-            text="INICIAR MONITORAMENTO",
-            command=self.iniciar_busca,
-            fg_color=COR_SECUNDARIA,
-            hover_color="#8c752d",
-            text_color="#FFFFFF",
-            height=50,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            corner_radius=8
-        )
-        self.btn_iniciar.pack(fill="x", pady=(10, 5))
-
-        self.lbl_status = ctk.CTkLabel(
-            self.container,
-            text="Pronto para iniciar.",
-            text_color="#777777",
-            font=ctk.CTkFont(size=12)
-        )
-        self.lbl_status.pack(pady=5)
 
     def selecionar_diretorio(self):
         diretorio = filedialog.askdirectory(title="Selecione a pasta para guardar os arquivos")
@@ -189,12 +219,14 @@ class AppMonitoramento(ctk.CTk):
         self.btn_iniciar.configure(state="disabled", text="BUSCANDO DADOS... (PODE DEMORAR)")
         self.btn_dir.configure(state="disabled")
 
-        threading.Thread(target=self.processo_extracao, args=(palavras_selecionadas, self.caminho_salvamento),
-                         daemon=True).start()
+        baixar_anexos = self.switch_baixar.get() == 1
 
-    def processo_extracao(self, palavras_chave, pasta_raiz):
+        threading.Thread(target=self.processo_extracao,
+                         args=(palavras_selecionadas, self.caminho_salvamento, baixar_anexos), daemon=True).start()
+
+    def processo_extracao(self, palavras_chave, pasta_raiz, baixar_anexos):
         try:
-            df_resultados = buscar_editais_pncp(palavras_chave, pasta_raiz, app_gui=self)
+            df_resultados = buscar_editais_pncp(palavras_chave, pasta_raiz, app_gui=self, baixar_arquivos=baixar_anexos)
 
             self.atualizar_status("Salvando CSV e finalizando...")
             total_salvos = salvar_em_csv(df_resultados, pasta_raiz)
