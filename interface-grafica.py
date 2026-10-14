@@ -3,7 +3,6 @@ from tkinter import filedialog, messagebox
 import threading
 import os
 
-# Importação atualizada para utilizar o salvar_em_excel
 from extrator_pncp import buscar_editais_pncp, salvar_em_excel
 
 # --- CONFIGURAÇÃO DA PALETA DE CORES BLOKO ---
@@ -75,23 +74,30 @@ class AppMonitoramento(ctk.CTk):
 
         self.frame_checks = ctk.CTkFrame(self.container, fg_color=COR_CARD, border_width=1, border_color="#EBEBEB",
                                          corner_radius=8)
-        self.frame_checks.pack(fill="x", pady=(0, 20), ipadx=10, ipady=10)
+        self.frame_checks.pack(fill="x", pady=(0, 5), ipadx=10, ipady=10)
 
         self.frame_checks.grid_columnconfigure(0, weight=1)
         self.frame_checks.grid_columnconfigure(1, weight=1)
 
         self.check_vars = {}
+        self.hidden_checks = []
+        self.filtros_expandidos = False
 
+        # Nova lista de termos expandida
         termos_brutos = [
-            "videowall", "surveillance", "controle de acesso",
-            "infraestrutura seca", "cabeamento estruturado",
-            "fibra óptica", "data center", "access point", "switch"
+            "videowall", "cftv", "leitor biométrico", "manutenção predial", "catracas",
+            "firewall", "tela interativa", "segurança eletrônica", "nobreak",
+            "controle de acesso", "infraestrutura seca", "cabeamento estruturado",
+            "fibra óptica", "data center", "access point", "switch", "videomonitoramento",
         ]
 
+        # Ordenar alfabeticamente e padronizar o título (Ex: "Access Point")
         termos_padrao = sorted([termo.title() for termo in termos_brutos])
 
+        LIMITE_VISIVEL = 8  # Número de termos visíveis antes de clicar em expandir
+
         for i, termo in enumerate(termos_padrao):
-            var = ctk.BooleanVar(value=True)
+            var = ctk.BooleanVar(value=True)  # Começam todos marcados
             chk = ctk.CTkCheckBox(
                 self.frame_checks,
                 text=termo,
@@ -104,10 +110,29 @@ class AppMonitoramento(ctk.CTk):
                 checkbox_width=22,
                 checkbox_height=22
             )
+
             linha = i // 2
             coluna = i % 2
-            chk.grid(row=linha, column=coluna, padx=20, pady=10, sticky="w")
             self.check_vars[termo] = var
+
+            if i < LIMITE_VISIVEL:
+                chk.grid(row=linha, column=coluna, padx=20, pady=8, sticky="w")
+            else:
+                # Guarda os checkboxes excedentes numa lista para mostrar/esconder depois
+                self.hidden_checks.append((chk, linha, coluna))
+
+        # Botão Expansor
+        self.btn_expandir = ctk.CTkButton(
+            self.container,
+            text="Ver todos os filtros ↓",
+            command=self.alternar_filtros,
+            fg_color="transparent",
+            hover_color="#EBEBEB",
+            text_color=COR_PRIMARIA,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            height=30
+        )
+        self.btn_expandir.pack(anchor="center", pady=(0, 15))
 
         self.lbl_secao2 = ctk.CTkLabel(self.container, text="Termos Adicionais",
                                        font=ctk.CTkFont(size=14, weight="bold"), text_color=COR_PRIMARIA)
@@ -115,7 +140,7 @@ class AppMonitoramento(ctk.CTk):
 
         self.entry_custom = ctk.CTkEntry(
             self.container,
-            placeholder_text="Insira novos termos separados por vírgula (Ex: router, firewall, gpon)",
+            placeholder_text="Insira novos termos separados por vírgula (Ex: router, gpon)",
             height=45,
             font=ctk.CTkFont(size=13),
             border_color="#CCCCCC",
@@ -177,6 +202,20 @@ class AppMonitoramento(ctk.CTk):
             corner_radius=6
         )
         self.btn_dir.pack(side="right")
+
+    def alternar_filtros(self):
+        if not self.filtros_expandidos:
+            # Revela os checkboxes ocultos
+            for chk, linha, coluna in self.hidden_checks:
+                chk.grid(row=linha, column=coluna, padx=20, pady=8, sticky="w")
+            self.btn_expandir.configure(text="Ocultar filtros ↑")
+            self.filtros_expandidos = True
+        else:
+            # Esconde novamente
+            for chk, linha, coluna in self.hidden_checks:
+                chk.grid_forget()
+            self.btn_expandir.configure(text="Ver todos os filtros ↓")
+            self.filtros_expandidos = False
 
     def selecionar_diretorio(self):
         diretorio = filedialog.askdirectory(title="Selecione a pasta para guardar os arquivos")

@@ -120,31 +120,56 @@ def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None, bai
                     cnpj = licitacao.get('orgao_cnpj')
                     ano = licitacao.get('ano')
                     seq = licitacao.get('numero_sequencial')
+                    orgao = licitacao.get('orgao_nome', 'Não Informado')
 
-                    data_fim_str = licitacao.get('data_fim_recebimento_propostas')
-
-                    valor_total = licitacao.get('valor_total_estimado')
-
-                    if (not data_fim_str or str(
-                            data_fim_str).strip() == "" or valor_total is None) and cnpj and ano and seq:
+                    # 1. Requisição à API de detalhes (necessária para garantir a Esfera, UF e Valor exato)
+                    json_detalhe = {}
+                    if cnpj and ano and seq:
                         detalhe_url = f"https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{seq}"
                         try:
                             res_detalhe = scraper.get(detalhe_url, headers=headers_detalhe, timeout=15)
                             if res_detalhe.status_code == 200:
                                 json_detalhe = res_detalhe.json()
-
-                                if not data_fim_str or str(data_fim_str).strip() == "":
-                                    data_fim_str = (
-                                            json_detalhe.get('dataHoraFimRecebimentoPropostas') or
-                                            json_detalhe.get('dataFimRecebimentoPropostas') or
-                                            json_detalhe.get('dataHoraAberturaProposta') or
-                                            json_detalhe.get('dataAberturaProposta')
-                                    )
-
-                                if valor_total is None:
-                                    valor_total = json_detalhe.get('valorTotalEstimado')
                         except:
                             pass
+
+                    # --- FILTRO 1: ESFERA (Ignorar Municipal) ---
+                    esfera_id = json_detalhe.get('orgaoEntidade', {}).get('esferaId') or licitacao.get(
+                        'esfera_id') or licitacao.get('esferaId')
+
+                    if not esfera_id:
+                        orgao_upper = orgao.upper()
+                        if 'MUNICIPAL' in orgao_upper or 'MUNICÍPIO' in orgao_upper or 'PREFEITURA' in orgao_upper:
+                            esfera_id = 'M'
+
+                    if esfera_id == 'M':
+                        continue  # Corta editais municipais imediatamente
+
+                    # --- FILTRO 2: MODALIDADE E UF (Dispensas só passam se forem no DF) ---
+                    modalidade = (
+                                json_detalhe.get('modalidadeNome') or licitacao.get('modalidade_nome') or licitacao.get(
+                            'modalidadeNome') or "").lower()
+                    uf = (json_detalhe.get('unidadeOrgao', {}).get('ufSigla') or licitacao.get('uf') or licitacao.get(
+                        'unidade_orgao_uf') or "").upper()
+
+                    if "dispensa" in modalidade:
+                        if uf != "DF":
+                            continue  # Corta dispensas fora do DF
+
+                    # --- TRATAMENTO DE DATAS E VALORES ---
+                    data_fim_str = licitacao.get('data_fim_recebimento_propostas')
+                    valor_total = licitacao.get('valor_total_estimado')
+
+                    if not data_fim_str or str(data_fim_str).strip() == "":
+                        data_fim_str = (
+                                json_detalhe.get('dataHoraFimRecebimentoPropostas') or
+                                json_detalhe.get('dataFimRecebimentoPropostas') or
+                                json_detalhe.get('dataHoraAberturaProposta') or
+                                json_detalhe.get('dataAberturaProposta')
+                        )
+
+                    if valor_total is None:
+                        valor_total = json_detalhe.get('valorTotalEstimado')
 
                     is_valid = True
 
@@ -158,8 +183,6 @@ def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None, bai
 
                     if not is_valid:
                         continue
-
-                    orgao = licitacao.get('orgao_nome', 'Não Informado')
 
                     if valor_total is not None:
                         try:
@@ -209,33 +232,27 @@ def salvar_em_excel(df_editais: pd.DataFrame, pasta_raiz: str):
     if df_editais.empty:
         return 0
 
-    # Criação estruturada do Excel
     with pd.ExcelWriter(nome_arquivo, engine='openpyxl') as writer:
         df_editais.to_excel(writer, index=False, sheet_name='Oportunidades')
 
         workbook = writer.book
         worksheet = writer.sheets['Oportunidades']
 
-        # Definição do Design (Cor Bloko #3751A3 no formato Hex do OpenPyXL - sem a hashtag)
         header_fill = PatternFill(start_color="3751A3", end_color="3751A3", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True, size=11)
         wrap_alignment = Alignment(wrap_text=True, vertical="top")
         center_alignment = Alignment(horizontal="center", vertical="center")
 
-        # Aplica os estilos no cabeçalho e define a largura das colunas
         for col_idx, col in enumerate(df_editais.columns, 1):
             col_letter = get_column_letter(col_idx)
 
-            # Pinta e formata o título
             header_cell = worksheet[f"{col_letter}1"]
             header_cell.fill = header_fill
             header_cell.font = header_font
             header_cell.alignment = center_alignment
 
-            # Trava a largura da coluna (~277 pixels)
             worksheet.column_dimensions[col_letter].width = 38
 
-            # Ativa a quebra de texto (wrap text) e o alinhamento para o topo no restante das linhas
             for row_idx in range(2, len(df_editais) + 2):
                 worksheet[f"{col_letter}{row_idx}"].alignment = wrap_alignment
 
