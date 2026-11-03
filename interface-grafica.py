@@ -5,7 +5,6 @@ import os
 
 from extrator_pncp import buscar_editais_pncp, salvar_em_excel
 
-# --- CONFIGURAÇÃO DA PALETA DE CORES BLOKO ---
 COR_PRIMARIA = "#3751A3"
 COR_SECUNDARIA = "#a38937"
 COR_CLARA = "#7188cf"
@@ -18,7 +17,6 @@ ctk.set_appearance_mode("light")
 class AppMonitoramento(ctk.CTk):
     def __init__(self):
         super().__init__()
-
         self.title("Bloko - Monitoramento de Editais")
         self.geometry("700x650")
         self.resizable(False, False)
@@ -83,7 +81,6 @@ class AppMonitoramento(ctk.CTk):
         self.hidden_checks = []
         self.filtros_expandidos = False
 
-        # Nova lista de termos expandida
         termos_brutos = [
             "videowall", "cftv", "leitor biométrico", "manutenção predial", "catracas",
             "firewall", "tela interativa", "segurança eletrônica", "nobreak",
@@ -91,13 +88,11 @@ class AppMonitoramento(ctk.CTk):
             "fibra óptica", "data center", "access point", "switch", "videomonitoramento",
         ]
 
-        # Ordenar alfabeticamente e padronizar o título (Ex: "Access Point")
         termos_padrao = sorted([termo.title() for termo in termos_brutos])
-
-        LIMITE_VISIVEL = 8  # Número de termos visíveis antes de clicar em expandir
+        LIMITE_VISIVEL = 8
 
         for i, termo in enumerate(termos_padrao):
-            var = ctk.BooleanVar(value=True)  # Começam todos marcados
+            var = ctk.BooleanVar(value=True)
             chk = ctk.CTkCheckBox(
                 self.frame_checks,
                 text=termo,
@@ -118,10 +113,8 @@ class AppMonitoramento(ctk.CTk):
             if i < LIMITE_VISIVEL:
                 chk.grid(row=linha, column=coluna, padx=20, pady=8, sticky="w")
             else:
-                # Guarda os checkboxes excedentes numa lista para mostrar/esconder depois
                 self.hidden_checks.append((chk, linha, coluna))
 
-        # Botão Expansor
         self.btn_expandir = ctk.CTkButton(
             self.container,
             text="Ver todos os filtros ↓",
@@ -205,13 +198,11 @@ class AppMonitoramento(ctk.CTk):
 
     def alternar_filtros(self):
         if not self.filtros_expandidos:
-            # Revela os checkboxes ocultos
             for chk, linha, coluna in self.hidden_checks:
                 chk.grid(row=linha, column=coluna, padx=20, pady=8, sticky="w")
             self.btn_expandir.configure(text="Ocultar filtros ↑")
             self.filtros_expandidos = True
         else:
-            # Esconde novamente
             for chk, linha, coluna in self.hidden_checks:
                 chk.grid_forget()
             self.btn_expandir.configure(text="Ver todos os filtros ↓")
@@ -261,12 +252,19 @@ class AppMonitoramento(ctk.CTk):
         try:
             df_resultados = buscar_editais_pncp(palavras_chave, pasta_raiz, app_gui=self, baixar_arquivos=baixar_anexos)
 
-            self.atualizar_status("Gerando planilha Excel e finalizando...")
-            total_salvos = salvar_em_excel(df_resultados, pasta_raiz)
+            self.atualizar_status("Atualizando planilha Excel...")
+            total_novos = salvar_em_excel(df_resultados, pasta_raiz)
 
-            self.atualizar_status(f"Concluído! {total_salvos} editais capturados.")
-            messagebox.showinfo("Sucesso",
-                                f"Monitoramento finalizado.\n{total_salvos} editais ativos encontrados e salvos em:\n{pasta_raiz}")
+            # Nova validação de mensagens dinâmicas
+            if total_novos == 0:
+                self.atualizar_status("Concluído! Nenhum edital novo encontrado.")
+                messagebox.showinfo("Busca Finalizada",
+                                    "O monitoramento terminou.\n\nNenhum edital novo foi encontrado nesta rodada. Sua planilha atual foi mantida intacta.")
+            else:
+                self.atualizar_status(f"Concluído! {total_novos} novos editais capturados.")
+                messagebox.showinfo("Sucesso",
+                                    f"Monitoramento finalizado.\n\n{total_novos} novos editais foram encontrados e adicionados à sua planilha em:\n{pasta_raiz}")
+
         except Exception as e:
             self.atualizar_status("Erro durante a execução.")
             messagebox.showerror("Erro Crítico", f"Ocorreu um erro no processo:\n{e}")

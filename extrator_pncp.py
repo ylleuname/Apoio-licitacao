@@ -74,6 +74,17 @@ def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None, bai
     resultados_totais = []
     hoje = datetime.now()
 
+    arquivo_excel = os.path.join(pasta_raiz, "editais_monitorados.xlsx")
+    ids_ja_processados = set()
+
+    if os.path.exists(arquivo_excel):
+        try:
+            df_antigo = pd.read_excel(arquivo_excel)
+            if 'ID Licitação' in df_antigo.columns:
+                ids_ja_processados = set(df_antigo['ID Licitação'].astype(str).tolist())
+        except Exception:
+            pass
+
     scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True})
     headers_detalhe = {'Accept': 'application/json'}
 
@@ -116,13 +127,16 @@ def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None, bai
                     break
 
                 for licitacao in dados:
-                    id_licitacao = licitacao.get('numero_controle_pncp', 'N/A')
+                    id_licitacao = str(licitacao.get('numero_controle_pncp', 'N/A'))
+
+                    if id_licitacao in ids_ja_processados:
+                        continue
+
                     cnpj = licitacao.get('orgao_cnpj')
                     ano = licitacao.get('ano')
                     seq = licitacao.get('numero_sequencial')
                     orgao = licitacao.get('orgao_nome', 'Não Informado')
 
-                    # 1. Requisição à API de detalhes (necessária para garantir a Esfera, UF e Valor exato)
                     json_detalhe = {}
                     if cnpj and ano and seq:
                         detalhe_url = f"https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{seq}"
@@ -143,20 +157,18 @@ def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None, bai
                             esfera_id = 'M'
 
                     if esfera_id == 'M':
-                        continue  # Corta editais municipais imediatamente
+                        continue
 
-                    # --- FILTRO 2: MODALIDADE E UF (Dispensas só passam se forem no DF) ---
+                        # --- FILTRO 2: REMOVER DISPENSA COM DISPUTA ---
                     modalidade = (
                                 json_detalhe.get('modalidadeNome') or licitacao.get('modalidade_nome') or licitacao.get(
                             'modalidadeNome') or "").lower()
-                    uf = (json_detalhe.get('unidadeOrgao', {}).get('ufSigla') or licitacao.get('uf') or licitacao.get(
-                        'unidade_orgao_uf') or "").upper()
+                    modo_disputa = (json_detalhe.get('modoDisputaNome') or licitacao.get(
+                        'modo_disputa_nome') or licitacao.get('modoDisputaNome') or "").lower()
 
-                    if "dispensa" in modalidade:
-                        if uf != "DF":
-                            continue  # Corta dispensas fora do DF
+                    if "dispensa" in modalidade and ("disputa" in modo_disputa or "disputa" in modalidade):
+                        continue
 
-                    # --- TRATAMENTO DE DATAS E VALORES ---
                     data_fim_str = licitacao.get('data_fim_recebimento_propostas')
                     valor_total = licitacao.get('valor_total_estimado')
 
@@ -207,7 +219,7 @@ def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None, bai
                         '%d/%m/%Y') if data_pub_str else 'N/A'
 
                     link_acesso = f"https://pncp.gov.br/app/editais/{cnpj}/{ano}/{seq}" if (
-                            cnpj and ano and seq) else licitacao.get('itemUrl', 'Link indisponível')
+                                cnpj and ano and seq) else licitacao.get('itemUrl', 'Link indisponível')
 
                     resultados_totais.append({
                         'ID Licitação': id_licitacao,
@@ -220,20 +232,32 @@ def buscar_editais_pncp(palavras_chave: list, pasta_raiz: str, app_gui=None, bai
 
                 pagina_atual += 1
 
-    df = pd.DataFrame(resultados_totais)
-    if not df.empty:
-        df = df.drop_duplicates(subset=['ID Licitação'])
+    df_novos = pd.DataFrame(resultados_totais)
+    if not df_novos.empty:
+        df_novos = df_novos.drop_duplicates(subset=['ID Licitação'])
 
-    return df
+    return df_novos
 
 
-def salvar_em_excel(df_editais: pd.DataFrame, pasta_raiz: str):
-    nome_arquivo = os.path.join(pasta_raiz, "editais_monitorados.xlsx")
-    if df_editais.empty:
+def salvar_em_excel(df_novos: pd.DataFrame, pasta_raiz: str):
+    # Se não há nenhum edital novo, interrompe o processo para não reescrever o arquivo à toa
+    if df_novos.empty:
         return 0
 
+    nome_arquivo = os.path.join(pasta_raiz, "editais_monitorados.xlsx")
+
+    if os.path.exists(nome_arquivo):
+        try:
+            df_antigo = pd.read_excel(nome_arquivo)
+            df_final = pd.concat([df_antigo, df_novos], ignore_index=True)
+            df_final = df_final.drop_duplicates(subset=['ID Licitação'], keep='last')
+        except Exception:
+            df_final = df_novos
+    else:
+        df_final = df_novos
+
     with pd.ExcelWriter(nome_arquivo, engine='openpyxl') as writer:
-        df_editais.to_excel(writer, index=False, sheet_name='Oportunidades')
+        df_final.to_excel(writer, index=False, sheet_name='Oportunidades')
 
         workbook = writer.book
         worksheet = writer.sheets['Oportunidades']
@@ -243,7 +267,7 @@ def salvar_em_excel(df_editais: pd.DataFrame, pasta_raiz: str):
         wrap_alignment = Alignment(wrap_text=True, vertical="top")
         center_alignment = Alignment(horizontal="center", vertical="center")
 
-        for col_idx, col in enumerate(df_editais.columns, 1):
+        for col_idx, col in enumerate(df_final.columns, 1):
             col_letter = get_column_letter(col_idx)
 
             header_cell = worksheet[f"{col_letter}1"]
@@ -253,7 +277,7 @@ def salvar_em_excel(df_editais: pd.DataFrame, pasta_raiz: str):
 
             worksheet.column_dimensions[col_letter].width = 38
 
-            for row_idx in range(2, len(df_editais) + 2):
+            for row_idx in range(2, len(df_final) + 2):
                 worksheet[f"{col_letter}{row_idx}"].alignment = wrap_alignment
 
-    return len(df_editais)
+    return len(df_novos)
