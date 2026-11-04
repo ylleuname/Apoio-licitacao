@@ -83,7 +83,7 @@ class AppMonitoramento(ctk.CTk):
 
         termos_brutos = [
             "videowall", "cftv", "leitor biométrico", "manutenção predial", "catracas",
-            "firewall", "tela interativa", "segurança eletrônica", "nobreak",
+            "firewall", "segurança eletrônica", "nobreak",
             "controle de acesso", "infraestrutura seca", "cabeamento estruturado",
             "fibra óptica", "data center", "access point", "switch", "videomonitoramento",
         ]
